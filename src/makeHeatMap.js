@@ -1,5 +1,3 @@
-/* eslint-disable camelcase */
-
 const all_points = [];
 
 async function fetchPoints() {
