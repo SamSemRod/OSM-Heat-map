@@ -16,7 +16,6 @@ function countFlats(inputStr) {
   return res_incude;
 }
 
-// Функция для выполнения запроса к Overpass API
 async function fetchPointsFromOverpassAPI() {
   const overpassURL = `https://maps.mail.ru/osm/tools/overpass/api/interpreter?data=[out:json];
   (node["entrance"="staircase"](59.7590, 30.0882, 60.1085, 30.7603);
