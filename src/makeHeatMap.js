@@ -1,7 +1,10 @@
 /* eslint-disable camelcase */
 const all_points = [];
+const flats_points = [];
+const levels_points = [];
 const shop_points = [];
 
+// Считаем квартиры по диапазонам
 function countFlats(inputStr) {
   let res_incude = 0;
   const ranges = inputStr.split(';');
@@ -16,6 +19,63 @@ function countFlats(inputStr) {
   return res_incude;
 }
 
+// Запрос на Overpass API для первого слоя (количество квартир по flats)
+async function fetchFlatsFromOverpassAPI() {
+  const overpassFlatsURL = `https://maps.mail.ru/osm/tools/overpass/api/interpreter?data=[out:json][timeout:180];
+  (
+    way["building:flats"](59.7590, 30.0882, 60.1085, 30.7603);
+  ) -> .buildings;
+  way.buildings; out center tags;`;
+
+  try {
+    const response = await fetch(overpassFlatsURL);
+    const data = await response.json();
+    console.log('Flats data:', data);
+
+    data.elements.forEach((element) => {
+      if (element.center && element.tags['building:flats']) {
+        flats_points.push([
+          element.center.lat,
+          element.center.lon,
+          parseInt(element.tags['building:flats'], 10) / 100, // Скалируем количество квартир
+        ]);
+      }
+    });
+
+    console.log('Flats points fetched:', flats_points);
+  } catch (error) {
+    console.error('Error fetching flats data from Overpass API:', error);
+  }
+}
+
+// Запрос на Overpass API для второго слоя (количество этажей -> квартиры)
+async function fetchLevelsFromOverpassAPI() {
+  const overpassLevelsURL = `https://maps.mail.ru/osm/tools/overpass/api/interpreter?data=[out:json][timeout:180];
+  (
+    way["building:levels"](59.7590, 30.0882, 60.1085, 30.7603);
+  ) -> .buildings;
+  way.buildings; out center tags;`;
+
+  try {
+    const response = await fetch(overpassLevelsURL);
+    const data = await response.json();
+    console.log('Levels data:', data);
+
+    data.elements.forEach((element) => {
+      if (element.center && element.tags['building:levels']) {
+        const levels = parseInt(element.tags['building:levels'], 10);
+        const flats = levels * 30; // Переводим этажи в квартиры, умножая на 30
+        levels_points.push([element.center.lat, element.center.lon, flats / 100]); // Скалируем количество квартир
+      }
+    });
+
+    console.log('Levels points fetched:', levels_points);
+  } catch (error) {
+    console.error('Error fetching levels data from Overpass API:', error);
+  }
+}
+
+// Запрос на супермаркеты и квартиры
 async function fetchPointsFromOverpassAPI() {
   const overpassURL = `https://maps.mail.ru/osm/tools/overpass/api/interpreter?data=[out:json];
   (node["entrance"="staircase"](59.7590, 30.0882, 60.1085, 30.7603);
@@ -53,17 +113,17 @@ async function fetchPointsFromOverpassAPI() {
   }
 }
 
+// Генерация точек для тепловых карт
 function generatePoints() {
   const points = [];
-  let n = 0;
-  for (let i = 0; i < all_points.length; i++) {
-    all_points[i][2] /= 100;
-  }
-  points.push(...all_points);
-  console.log('Generated points:', points);
+  all_points.forEach((point) => {
+    point[2] /= 100; // Нормализуем количество квартир
+    points.push(point);
+  });
   return points;
 }
 
+// Инициализация карты
 async function initializeMap() {
   let map = L.map('map').setView([59.939274, 30.315289], 10);
 
@@ -73,14 +133,31 @@ async function initializeMap() {
   }).addTo(map);
 
   await fetchPointsFromOverpassAPI();
-  let final_points = generatePoints();
-  console.log(final_points);
+  await fetchFlatsFromOverpassAPI();
+  await fetchLevelsFromOverpassAPI();
 
-  let heat = L.heatLayer(final_points, {
+  // Генерация тепловой карты для всех точек
+  let final_points = generatePoints();
+  // L.heatLayer(final_points, {
+  //   radius: 25,
+  //   minOpacity: 0.3,
+  //   gradient: { 0.4: 'blue', 0.65: 'lime', 1: 'red' },
+  // }).addTo(map);
+
+  // // Тепловая карта для building:flats
+  // L.heatLayer(flats_points, {
+  //   radius: 25,
+  //   minOpacity: 0.4,
+  //   gradient: { 0.4: 'yellow', 0.65: 'orange', 1: 'red' },
+  // }).addTo(map);
+
+  // Тепловая карта для building:levels -> flats
+  L.heatLayer(levels_points, {
     radius: 25,
-    minOpacity: 0.3,
-    gradient: { 0.4: 'blue', 0.65: 'lime', 1: 'red' },
+    minOpacity: 0.4,
+    gradient: { 0.4: 'green', 0.65: 'cyan', 1: 'blue' },
   }).addTo(map);
+
   const smallIcon = L.icon({
     iconUrl: 'icons8-маркер-24.png',
     iconSize: [20, 20],
